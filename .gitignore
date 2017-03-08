@@ -1,0 +1,6 @@
+.rebar/
+ebin/
+deps/
+*.dump
+*.lock
+src/token.hrl
