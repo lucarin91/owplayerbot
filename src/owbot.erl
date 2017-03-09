@@ -33,27 +33,32 @@ command_handler(Url, UpdateId) ->
   Response = parse_response(get_command(Url ++ integer_to_list(UpdateId + 1))),
   {JsonObj} = jiffy:decode(Response),
   Result = proplists:get_value(<<"result">>, JsonObj, []),
-  % io:format("~p~n", [Result]),
-  case Result of
-    [ {[{<<"update_id">>, NewUpdateId}, {<<"message">>, {Message}} |_]} |_] ->
+  % io:format("~p~n",[length(Result)]),
+  NewUpdateId = consume_message(Result, UpdateId),
+  timer:sleep(1000),
+  command_handler(Url, NewUpdateId).
+
+consume_message([], UpdateId) -> UpdateId;
+consume_message([H|T], UpdateId) ->
+  case H of
+    {[{<<"update_id">>, NewUpdateId}, {<<"message">>, {Message}} |_]} ->
       case parse_message(Message) of
         {command, ChatID, _, Msg_str} -> run_command(ChatID, Msg_str);
         {text, _, _, _} -> ok;
          notxt -> ok
       end;
-    [ {[{<<"update_id">>, NewUpdateId}, {<<"inline_query">>, {Message}} |_]} |_] ->
-      io:format("~p~n", [Message]),
+    {[{<<"update_id">>, NewUpdateId}, {<<"inline_query">>, {Message}} |_]} ->
+      % io:format("~p~n", [Message]),
       parse_inline(Message);
     % [ {[{<<"update_id">>, NewUpdateId}, {<<"edited_message">>, {_Message}} |_]} |_] ->
     %   _Message;
-    % [ {[{<<"update_id">>, NewUpdateId} |_]} |_] ->
-    %   notxt;
+    {[{<<"update_id">>, NewUpdateId} |_]} ->
+      notxt;
     _ ->
       NewUpdateId = UpdateId,
       notxt
   end,
-  timer:sleep(1000),
-  command_handler(Url, NewUpdateId).
+  consume_message(T, NewUpdateId).
 
 parse_inline(Msg) ->
   try
@@ -63,7 +68,7 @@ parse_inline(Msg) ->
     Query1 = re:replace(Query, " ", "-"),
     Query2 = re:replace(Query1, "#", "-"),
     Url = ?OW_URL ++ "/eu/" ++ binary_to_list(list_to_binary(Query2)),
-    io:format("~p~n",[Url]),
+    % io:format("~p~n",[Url]),
     Html = get_html(Url),
     Quick = get_quick(Html),
     Comp = get_comp(Html),
@@ -120,7 +125,7 @@ send_query(QueryId, Title, Description, Text) ->
       {parse_mode, <<"Markdown">>}]}}
     ]}],
   Json = binary_to_list(jiffy:encode(EJson)),
-  io:format("~p~n", [Json]),
+  % io:format("~p~n", [Json]),
   set_command(?SET_QUERY_URL, "inline_query_id=" ++ QueryId ++ "&results=" ++ Json).
 
 get_command(Url) ->
