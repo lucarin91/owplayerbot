@@ -61,35 +61,42 @@ consume_message([H|T], UpdateId) ->
   consume_message(T, NewUpdateId).
 
 parse_inline(Msg) ->
-  try
-    Id = binary_to_list(proplists:get_value(<<"id">>, Msg)),
-    Query = binary_to_list(proplists:get_value(<<"query">>, Msg)),
-    io:format("~p ~p~n",[Id, Query]),
-    Query1 = re:replace(Query, " ", "-"),
-    Query2 = re:replace(Query1, "#", "-"),
-    Url = ?OW_URL ++ "/eu/" ++ binary_to_list(list_to_binary(Query2)),
-    % io:format("~p~n",[Url]),
-    Html = get_html(Url),
-    Quick = get_quick(Html),
-    Comp = get_comp(Html),
-    Rank = get_rank(Html),
-    Result = "*" ++ Query ++ "*\n" ++
-             "*Rank* " ++ Rank ++ "\n" ++
-             "\n*Quick Heroes*\n" ++ format_heroes(Quick) ++
-             "\n*Competitive Heroes*\n" ++ format_heroes(Comp),
-    [{FirtComp,_}|_] = Comp,
-    [{FirtQuick,_}|_] = Quick,
-    Description = "Rank " ++ Rank ++ "\n" ++
-                  "Most used heroes " ++ FirtQuick ++ " and " ++FirtComp,
-    send_query(Id, Query, Description, Result)
-  catch
-    _:_ -> skip
+  Id = binary_to_list(proplists:get_value(<<"id">>, Msg)),
+  Query = binary_to_list(proplists:get_value(<<"query">>, Msg)),
+  io:format("~p ~p~n",[Id, Query]),
+  Query1 = re:replace(Query, " ", "-"),
+  Query2 = re:replace(Query1, "#", "-"),
+  Url = ?OW_URL ++ "/eu/" ++ binary_to_list(list_to_binary(Query2)),
+  % io:format("~p~n",[Url]),
+  Html = get_html(Url),
+  Quick = get_quick(Html),
+  if
+    Quick /= not_found ->
+      Comp = get_comp(Html),
+      Rank = get_rank(Html),
+      Result = "*" ++ Query ++ "*\n" ++
+               "*Rank* " ++ Rank ++ "\n" ++
+               "\n*Quick Heroes*\n" ++ format_heroes(Quick) ++
+               "\n*Competitive Heroes*\n" ++ format_heroes(Comp),
+      io:format("~p~n", [Result]),
+      [{FirtComp,_}|_] = Comp,
+      [{FirtQuick,_}|_] = Quick,
+      Description = "Rank " ++ "`" ++ Rank ++ "`\n" ++
+                    "Most used heroes " ++ FirtQuick ++ " and " ++FirtComp,
+      send_query(Id, Query, Description, Result);
+    true -> skip
   end.
 
 format_heroes([]) -> "";
+format_heroes(not_found) -> "";
 format_heroes([H|T]) ->
   {Name, Desc} = H,
-  "_" ++ Name ++ " " ++ Desc ++ "_\n" ++ format_heroes(T).
+  "`" ++ Name ++ gen_spaces(12-length(Name)) ++ Desc ++ "`\n"
+  ++ format_heroes(T).
+
+gen_spaces(0) -> "";
+gen_spaces(Num) ->
+  " " ++ gen_spaces(Num-1).
 
 parse_message(notxt) -> notxt;
 parse_message(Message) ->
@@ -170,13 +177,21 @@ get_html(Url)->
 
 get_quick(Tree)->
   Xquick = "//*[@id=\"quickplay\"]/section[2]/div/div[2]",
-  [{_,_,QuickHeroes}] = mochiweb_xpath:execute(Xquick, Tree),
-  parse_heroes(QuickHeroes).
+  try
+    [{_,_,QuickHeroes}] = mochiweb_xpath:execute(Xquick, Tree),
+    parse_heroes(QuickHeroes)
+  catch
+    _:_ -> not_found
+  end.
 
 get_comp(Tree)->
   Xcomp ="//*[@id=\"competitive\"]/section[2]/div/div[2]",
-  [{_,_,CompHeroes}] = mochiweb_xpath:execute(Xcomp, Tree),
-  parse_heroes(CompHeroes).
+  try
+    [{_,_,CompHeroes}] = mochiweb_xpath:execute(Xcomp, Tree),
+    parse_heroes(CompHeroes)
+  catch
+    _:_ -> not_found
+  end.
 
 get_rank(Tree)->
   Xrank = "//*[@id=\"overview-section\"]/div/div[2]/div/div/div[1]/div/div[2]/div",
