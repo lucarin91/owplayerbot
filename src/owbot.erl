@@ -1,7 +1,8 @@
 -module(owbot).
+-import(unicode, [characters_to_list/1, characters_to_binary/1]).
 -export([start/0]).
-
 -include("token.hrl").
+
 -define(BASE_URL, "https://api.telegram.org/bot" ++ ?TOKEN).
 -define(GET_COMMAND_URL, ?BASE_URL ++ "/getUpdates?offset=").
 -define(SET_COMMAND_URL, ?BASE_URL ++ "/sendMessage").
@@ -61,27 +62,29 @@ consume_message([H|T], UpdateId) ->
   consume_message(T, NewUpdateId).
 
 parse_inline(Msg) ->
-  Id = binary_to_list(proplists:get_value(<<"id">>, Msg)),
-  Query = binary_to_list(proplists:get_value(<<"query">>, Msg)),
+  Id = characters_to_list(proplists:get_value(<<"id">>, Msg)),
+  Query = characters_to_list(proplists:get_value(<<"query">>, Msg)),
   io:format("~p ~p~n",[Id, Query]),
-  Query1 = re:replace(Query, " ", "-"),
-  Query2 = re:replace(Query1, "#", "-"),
-  Url = ?OW_URL ++ "/eu/" ++ binary_to_list(list_to_binary(Query2)),
+  Query1 = re:replace(Query, " ", "-", [{return, list}]),
+  Query2 = re:replace(Query1, "#", "-", [{return, list}]),
+  Url = ?OW_URL ++ "/eu/" ++ Query2,
   % io:format("~p~n",[Url]),
   Html = get_html(Url),
+  Name = re:replace(Query2, "-", "#", [{return, list}]),
   Quick = get_quick(Html),
   if
     Quick /= not_found ->
       Comp = get_comp(Html),
       Rank = get_rank(Html),
-      Result = "*" ++ Query ++ "*\n" ++
-               "*Rank* " ++ Rank ++ "\n" ++
+      Result = "*" ++ Name ++ "*\n" ++
+               "\n*Rank* `" ++ Rank ++ "`\n" ++
                "\n*Quick Heroes*\n" ++ format_heroes(Quick) ++
-               "\n*Competitive Heroes*\n" ++ format_heroes(Comp),
+               "\n*Competitive Heroes*\n" ++ format_heroes(Comp) ++
+               "\n[Click here]("++ Url ++") for player page",
       io:format("~p~n", [Result]),
       [{FirtComp,_}|_] = Comp,
       [{FirtQuick,_}|_] = Quick,
-      Description = "Rank " ++ "`" ++ Rank ++ "`\n" ++
+      Description = "Rank " ++ Rank ++ "\n" ++
                     "Most used heroes " ++ FirtQuick ++ " and " ++FirtComp,
       send_query(Id, Query, Description, Result);
     true -> skip
@@ -106,7 +109,7 @@ parse_message(Message) ->
   MsgID = proplists:get_value(<<"message_id">>, Message),
   case Command of
     undefined -> notxt;
-    _ -> Msg_str = binary_to_list(Command),
+    _ -> Msg_str = characters_to_list(Command),
       case Msg_str of
         [H|_] when H==47 -> {command, ChatID, MsgID, Msg_str};
         _  -> {text, ChatID, MsgID, Msg_str}
@@ -124,15 +127,17 @@ send_query(QueryId, Title, Description, Text) ->
   % Json = "[{\"type\":\"Article\", \"id\":\"sedia-21534\", \"title\":\"sedia\", \"input_message_content\":{\"message_text\": \"prova123\"}}]",
   EJson = [{[
     {type, <<"Article">>},
-    {id, list_to_binary(QueryId ++ Title)},
-    {title, list_to_binary(Title)},
-    {description, list_to_binary(Description)},
+    {id, characters_to_binary(QueryId ++ Title)},
+    {title, characters_to_binary(Title)},
+    {description, characters_to_binary(Description)},
     {input_message_content, {[
-      {message_text, list_to_binary(Text)},
-      {parse_mode, <<"Markdown">>}]}}
+      {message_text, characters_to_binary(Text)},
+      {parse_mode, <<"Markdown">>},
+      {disable_web_page_preview, true}
+      ]}}
     ]}],
   Json = binary_to_list(jiffy:encode(EJson)),
-  % io:format("~p~n", [Json]),
+  io:format("~p~n", [Json]),
   set_command(?SET_QUERY_URL, "inline_query_id=" ++ QueryId ++ "&results=" ++ Json).
 
 get_command(Url) ->
@@ -166,7 +171,7 @@ parse_heroes_rec([H|T], Num) ->
   {_,_,[Name]} = NameTag,
   {_,_,[Desc]} = DescTag,
   % io:format("~p ~p~n", [Name,Desc]).
-  [{binary_to_list(Name),binary_to_list(Desc)}] ++ parse_heroes_rec(T, Num-1).
+  [{unicode:characters_to_list(Name),unicode:characters_to_list(Desc)}] ++ parse_heroes_rec(T, Num-1).
 
 parse_heroes(List) -> parse_heroes_rec(List,3).
 
@@ -199,7 +204,7 @@ get_rank(Tree)->
     [{_,_,[RankStr]}] = mochiweb_xpath:execute(Xrank, Tree),
     % Result = mochiweb_xpath:execute(Xrank, Tree),
     % io:format("~p~n", [Result]).
-    Rank= binary_to_list(RankStr),
+    Rank= characters_to_list(RankStr),
     Rank
   catch
       _:_ -> "no rank"
